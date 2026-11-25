@@ -117,6 +117,13 @@ func New(c *Config) (AuthDB, error) {
 		return newSimpleDB(c)
 	}
 
+	// A config without a database type selects the simple DB; its data
+	// source, if set, is the file used to persist used one-time tokens so
+	// that the protection against token reuse survives restarts.
+	if c.Type == "" {
+		return newSimpleDB(c)
+	}
+
 	opts := []nosql.Option{nosql.WithDatabase(c.Database),
 		nosql.WithValueDir(c.ValueDir)}
 	if c.BadgerFileLoadingMode != "" {

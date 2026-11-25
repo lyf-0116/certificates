@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"math/big"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -13,6 +14,24 @@ import (
 	"github.com/smallstep/nosql"
 	"github.com/smallstep/nosql/database"
 )
+
+func TestNew(t *testing.T) {
+	// A nil config results in the simple DB without persistence.
+	db, err := New(nil)
+	assert.FatalError(t, err)
+	sdb, ok := db.(*SimpleDB)
+	assert.True(t, ok)
+	assert.Equals(t, "", sdb.path)
+
+	// A config without a type results in the simple DB, persisting used
+	// tokens to the data source.
+	path := filepath.Join(t.TempDir(), "used_tokens.json")
+	db, err = New(&Config{DataSource: path})
+	assert.FatalError(t, err)
+	sdb, ok = db.(*SimpleDB)
+	assert.True(t, ok)
+	assert.Equals(t, path, sdb.path)
+}
 
 func TestIsRevoked(t *testing.T) {
 	tests := map[string]struct {

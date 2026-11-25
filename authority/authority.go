@@ -352,7 +352,10 @@ func (a *Authority) init() error {
 	}
 
 	// Initialize step-ca Database if it's not already initialized with WithDB.
-	// If a.config.DB is nil then a simple, barebones in memory DB will be used.
+	// If a.config.DB is nil then a simple, barebones DB will be used. Used
+	// one-time tokens are persisted to a file when the DB is configured
+	// with a data source, so that the protection against token reuse
+	// survives restarts.
 	if a.db == nil {
 		if a.db, err = db.New(a.config.DB); err != nil {
 			return err
