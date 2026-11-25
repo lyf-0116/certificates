@@ -175,6 +175,7 @@ func TestAuthority_authorizeToken(t *testing.T) {
 		},
 		"fail/provisioner-not-found": func(t *testing.T) *authorizeTest {
 			cl := jose.Claims{
+				IssuedAt:  jose.NewNumericDate(now),
 				Subject:   "test.smallstep.com",
 				Issuer:    validIssuer,
 				NotBefore: jose.NewNumericDate(now),
@@ -216,6 +217,7 @@ func TestAuthority_authorizeToken(t *testing.T) {
 		},
 		"ok/simpledb": func(t *testing.T) *authorizeTest {
 			cl := jose.Claims{
+				IssuedAt:  jose.NewNumericDate(now),
 				Subject:   "test.smallstep.com",
 				Issuer:    validIssuer,
 				NotBefore: jose.NewNumericDate(now),
@@ -233,6 +235,7 @@ func TestAuthority_authorizeToken(t *testing.T) {
 		"fail/simpledb/token-already-used": func(t *testing.T) *authorizeTest {
 			_a := testAuthority(t)
 			cl := jose.Claims{
+				IssuedAt:  jose.NewNumericDate(now),
 				Subject:   "test.smallstep.com",
 				Issuer:    validIssuer,
 				NotBefore: jose.NewNumericDate(now),
@@ -253,6 +256,7 @@ func TestAuthority_authorizeToken(t *testing.T) {
 		},
 		"ok/sha256": func(t *testing.T) *authorizeTest {
 			cl := jose.Claims{
+				IssuedAt:  jose.NewNumericDate(now),
 				Subject:   "test.smallstep.com",
 				Issuer:    validIssuer,
 				NotBefore: jose.NewNumericDate(now),
@@ -269,6 +273,7 @@ func TestAuthority_authorizeToken(t *testing.T) {
 		"fail/sha256/token-already-used": func(t *testing.T) *authorizeTest {
 			_a := testAuthority(t)
 			cl := jose.Claims{
+				IssuedAt:  jose.NewNumericDate(now),
 				Subject:   "test.smallstep.com",
 				Issuer:    validIssuer,
 				NotBefore: jose.NewNumericDate(now),
@@ -295,6 +300,7 @@ func TestAuthority_authorizeToken(t *testing.T) {
 			}
 
 			cl := jose.Claims{
+				IssuedAt:  jose.NewNumericDate(now),
 				Subject:   "test.smallstep.com",
 				Issuer:    validIssuer,
 				NotBefore: jose.NewNumericDate(now),
@@ -318,6 +324,7 @@ func TestAuthority_authorizeToken(t *testing.T) {
 			}
 
 			cl := jose.Claims{
+				IssuedAt:  jose.NewNumericDate(now),
 				Subject:   "test.smallstep.com",
 				Issuer:    validIssuer,
 				NotBefore: jose.NewNumericDate(now),
@@ -343,6 +350,7 @@ func TestAuthority_authorizeToken(t *testing.T) {
 			}
 
 			cl := jose.Claims{
+				IssuedAt:  jose.NewNumericDate(now),
 				Subject:   "test.smallstep.com",
 				Issuer:    validIssuer,
 				NotBefore: jose.NewNumericDate(now),
@@ -361,6 +369,7 @@ func TestAuthority_authorizeToken(t *testing.T) {
 		},
 		"fail/uninitialized": func(t *testing.T) *authorizeTest {
 			cl := jose.Claims{
+				IssuedAt:  jose.NewNumericDate(now),
 				Subject:   "test.smallstep.com",
 				Issuer:    "uninitialized",
 				NotBefore: jose.NewNumericDate(now),
@@ -432,6 +441,7 @@ func TestAuthority_authorizeRevoke(t *testing.T) {
 		},
 		"fail/token/invalid-subject": func(t *testing.T) *authorizeTest {
 			cl := jose.Claims{
+				IssuedAt:  jose.NewNumericDate(now),
 				Subject:   "",
 				Issuer:    validIssuer,
 				NotBefore: jose.NewNumericDate(now),
@@ -450,6 +460,7 @@ func TestAuthority_authorizeRevoke(t *testing.T) {
 		},
 		"ok/token": func(t *testing.T) *authorizeTest {
 			cl := jose.Claims{
+				IssuedAt:  jose.NewNumericDate(now),
 				Subject:   "test.smallstep.com",
 				Issuer:    validIssuer,
 				NotBefore: jose.NewNumericDate(now),
@@ -516,6 +527,7 @@ func TestAuthority_authorizeSign(t *testing.T) {
 		},
 		"fail/invalid-subject": func(t *testing.T) *authorizeTest {
 			cl := jose.Claims{
+				IssuedAt:  jose.NewNumericDate(now),
 				Subject:   "",
 				Issuer:    validIssuer,
 				NotBefore: jose.NewNumericDate(now),
@@ -534,6 +546,7 @@ func TestAuthority_authorizeSign(t *testing.T) {
 		},
 		"ok": func(t *testing.T) *authorizeTest {
 			cl := jose.Claims{
+				IssuedAt:  jose.NewNumericDate(now),
 				Subject:   "test.smallstep.com",
 				Issuer:    validIssuer,
 				NotBefore: jose.NewNumericDate(now),
@@ -612,6 +625,7 @@ func TestAuthority_Authorize(t *testing.T) {
 		},
 		"ok/sign": func(t *testing.T) *authorizeTest {
 			cl := jose.Claims{
+				IssuedAt:  jose.NewNumericDate(now),
 				Subject:   "test.smallstep.com",
 				Issuer:    validIssuer,
 				NotBefore: jose.NewNumericDate(now),
@@ -638,6 +652,7 @@ func TestAuthority_Authorize(t *testing.T) {
 		},
 		"ok/revoke": func(t *testing.T) *authorizeTest {
 			cl := jose.Claims{
+				IssuedAt:  jose.NewNumericDate(now),
 				Subject:   "test.smallstep.com",
 				Issuer:    validIssuer,
 				NotBefore: jose.NewNumericDate(now),
@@ -737,6 +752,7 @@ func TestAuthority_Authorize(t *testing.T) {
 		},
 		"ok/sshRevoke": func(t *testing.T) *authorizeTest {
 			cl := jose.Claims{
+				IssuedAt:  jose.NewNumericDate(now),
 				Subject:   "test.smallstep.com",
 				Issuer:    validIssuer,
 				NotBefore: jose.NewNumericDate(now),
@@ -1043,6 +1059,7 @@ func TestAuthority_authorizeSSHSign(t *testing.T) {
 		},
 		"fail/invalid-subject": func(t *testing.T) *authorizeTest {
 			cl := jose.Claims{
+				IssuedAt:  jose.NewNumericDate(now),
 				Subject:   "",
 				Issuer:    validIssuer,
 				NotBefore: jose.NewNumericDate(now),
@@ -1136,6 +1153,7 @@ func TestAuthority_authorizeSSHRenew(t *testing.T) {
 		},
 		"fail/sshRenew-unimplemented-jwk-provisioner": func(t *testing.T) *authorizeTest {
 			cl := jose.Claims{
+				IssuedAt:  jose.NewNumericDate(now),
 				Subject:   "",
 				Issuer:    validIssuer,
 				NotBefore: jose.NewNumericDate(now),
@@ -1244,6 +1262,7 @@ func TestAuthority_authorizeSSHRevoke(t *testing.T) {
 		},
 		"fail/invalid-subject": func(t *testing.T) *authorizeTest {
 			cl := jose.Claims{
+				IssuedAt:  jose.NewNumericDate(now),
 				Subject:   "",
 				Issuer:    validIssuer,
 				NotBefore: jose.NewNumericDate(now),
@@ -1335,6 +1354,7 @@ func TestAuthority_authorizeSSHRekey(t *testing.T) {
 		},
 		"fail/sshRekey-unimplemented-jwk-provisioner": func(t *testing.T) *authorizeTest {
 			cl := jose.Claims{
+				IssuedAt:  jose.NewNumericDate(now),
 				Subject:   "",
 				Issuer:    validIssuer,
 				NotBefore: jose.NewNumericDate(now),

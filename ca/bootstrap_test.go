@@ -131,6 +131,7 @@ func generateBootstrapToken(ca, subject, sha string) string {
 	}{
 		SHA: sha,
 		Claims: jose.Claims{
+			IssuedAt:  jose.NewNumericDate(now),
 			ID:        id,
 			Subject:   subject,
 			Issuer:    "mariano",

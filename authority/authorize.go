@@ -81,11 +81,15 @@ func (a *Authority) authorizeToken(ctx context.Context, token string) (provision
 		return nil, errs.UnauthorizedErr(err)
 	}
 
+	if err := a.validateAuthorizeTokenClaims(claims); err != nil {
+		return nil, err
+	}
+
 	// TODO: use new persistence layer abstraction.
 	// Do not accept tokens issued before the start of the ca.
 	// This check is meant as a stopgap solution to the current lack of a persistence layer.
-	if a.config.AuthorityConfig != nil && !a.config.AuthorityConfig.DisableIssuedAtCheck {
-		if claims.IssuedAt != nil && claims.IssuedAt.Time().Before(a.startTime) {
+	if a.issuedAtCheckEnabled() {
+		if claims.IssuedAt.Time().Before(a.startTime) {
 			return nil, errs.Unauthorized("token issued before the bootstrap of certificate authority")
 		}
 	}
@@ -99,6 +103,21 @@ func (a *Authority) authorizeToken(ctx context.Context, token string) (provision
 	}
 
 	return p, nil
+}
+
+func (a *Authority) validateAuthorizeTokenClaims(claims *Claims) error {
+	if !a.issuedAtCheckEnabled() {
+		return nil
+	}
+	if claims.IssuedAt == nil {
+		return errs.Unauthorized("token is missing required claim 'iat'")
+	}
+	return nil
+}
+
+func (a *Authority) issuedAtCheckEnabled() bool {
+	return a.config != nil && a.config.AuthorityConfig != nil &&
+		!a.config.AuthorityConfig.DisableIssuedAtCheck
 }
 
 // AuthorizeAdminToken authorize an Admin token.
@@ -193,20 +212,25 @@ func (a *Authority) AuthorizeAdminToken(r *http.Request, token string) (*linkedc
 
 // UseToken stores the token to protect against reuse.
 //
-// This method currently ignores most errors coming from the GetTokenID because
-// the token is already validated. But it should specifically ignore the errors
-// provisioner.ErrAllowTokenReuse, provisioner.ErrNotImplemented, and
-// provisioner.ErrTokenFlowNotSupported unless this latter one used in a renewal
-// flow without mTLS.
+// Known provisioner errors that explicitly permit reuse or indicate that token
+// reuse is not implemented do not create a reuse record. Any other error falls
+// back to the hash of the complete token so that identifier extraction cannot
+// bypass one-time-token protection. provisioner.ErrTokenFlowNotSupported is
+// rejected unless it is used in a renewal flow without mTLS.
 func (a *Authority) UseToken(ctx context.Context, token string, prov provisioner.Interface) error {
 	reuseKey, err := prov.GetTokenID(token)
 	if err != nil {
-		// Fail on ErrTokenFlowNotSupported but allow x5cInsecure renew token
-		if errors.Is(err, provisioner.ErrTokenFlowNotSupported) && provisioner.RenewMethod != provisioner.MethodFromContext(ctx) {
-			return errs.BadRequest("token flow is not supported")
+		if errors.Is(err, provisioner.ErrTokenFlowNotSupported) {
+			// Fail on ErrTokenFlowNotSupported but allow x5cInsecure renew token
+			if provisioner.RenewMethod != provisioner.MethodFromContext(ctx) {
+				return errs.BadRequest("token flow is not supported")
+			}
+			return nil
 		}
-
-		return nil
+		if errors.Is(err, provisioner.ErrAllowTokenReuse) || errors.Is(err, provisioner.ErrNotImplemented) {
+			return nil
+		}
+		reuseKey = ""
 	}
 
 	if reuseKey == "" {

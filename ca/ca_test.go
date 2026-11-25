@@ -182,6 +182,7 @@ ZEp7knvU2psWRw==
 				SANS []string `json:"sans"`
 			}{
 				Claims: jose.Claims{
+					IssuedAt:  jose.NewNumericDate(now),
 					Subject:   "invalid",
 					Issuer:    "step-cli",
 					NotBefore: jose.NewNumericDate(now),
@@ -215,6 +216,7 @@ ZEp7knvU2psWRw==
 				SANS []string `json:"sans"`
 			}{
 				Claims: jose.Claims{
+					IssuedAt:  jose.NewNumericDate(now),
 					Subject:   "test.smallstep.com",
 					Issuer:    "step-cli",
 					NotBefore: jose.NewNumericDate(now),
@@ -249,6 +251,7 @@ ZEp7knvU2psWRw==
 				SANS []string `json:"sans"`
 			}{
 				Claims: jose.Claims{
+					IssuedAt:  jose.NewNumericDate(now),
 					Subject:   "test.smallstep.com",
 					Issuer:    "step-cli",
 					NotBefore: jose.NewNumericDate(now),

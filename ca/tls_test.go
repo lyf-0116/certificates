@@ -44,6 +44,7 @@ func generateOTT(t *testing.T, subject string) string {
 		SANS []string `json:"sans"`
 	}{
 		Claims: jose.Claims{
+			IssuedAt:  jose.NewNumericDate(now),
 			ID:        id,
 			Subject:   subject,
 			Issuer:    "mariano",
