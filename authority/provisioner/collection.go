@@ -163,9 +163,12 @@ func (c *Collection) LoadByCertificate(cert *x509.Certificate) (Interface, bool)
 		}
 	}
 
-	// Default to noop provisioner if an extension is not found. This allows to
-	// accept a renewal of a cert without the provisioner extension.
-	return &noop{}, true
+	// A certificate without a provisioner extension cannot be mapped back to a
+	// configured provisioner. Fail closed instead of falling back to a noop
+	// provisioner that authorizes every renewal: an unidentifiable issuer is not
+	// the same as a verified issuer, and treating both as allowed would let a
+	// decommissioned provisioner keep renewing certificates indefinitely.
+	return nil, false
 }
 
 // LoadEncryptedKey returns an encrypted key by indexed by KeyID. At this moment

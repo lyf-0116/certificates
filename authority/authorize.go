@@ -298,11 +298,18 @@ func (a *Authority) authorizeRevoke(ctx context.Context, token string) error {
 	return nil
 }
 
-// authorizeRenew locates the provisioner (using the provisioner extension in the cert), and checks
-// if for the configured provisioner, the renewal is enabled or not. If the
-// extra extension cannot be found, authorize the renewal by default.
+// authorizeRenew locates the provisioner (using the provisioner extension in
+// the cert) and checks if renewal is enabled for it.
 //
-// TODO(mariano): should we authorize by default?
+// Renewal fails closed when the issuing provisioner cannot be confirmed:
+// certificates whose provisioner extension points at a provisioner that no
+// longer exists in the configuration, and certificates without a provisioner
+// extension, are rejected. The only exception is the explicit
+// legacyRenewalProvisioners allowlist in the authority configuration, which
+// keeps renewal working for known historical provisioner identifiers. An
+// unidentifiable issuer must never be treated as a verified issuer, otherwise
+// decommissioned provisioners could extend the lifetime of their certificates
+// indefinitely.
 func (a *Authority) authorizeRenew(ctx context.Context, cert *x509.Certificate) (provisioner.Interface, error) {
 	serial := cert.SerialNumber.String()
 	var opts = []any{errs.WithKeyVal("serialNumber", serial)}
@@ -316,19 +323,49 @@ func (a *Authority) authorizeRenew(ctx context.Context, cert *x509.Certificate) 
 	}
 	p, err := a.LoadProvisionerByCertificate(cert)
 	if err != nil {
-		var ok bool
-		// For backward compatibility this method will also succeed if the
-		// certificate does not have a provisioner extension. LoadByCertificate
-		// returns the noop provisioner if this happens, and it allows
-		// certificate renewals.
-		if p, ok = a.provisioners.LoadByCertificate(cert); !ok {
+		// The provisioner referenced by the certificate cannot be resolved to
+		// a configured provisioner. Only renew when the provisioner name
+		// recorded in the certificate is explicitly allowlisted as a legacy
+		// identifier; everything else is rejected. A certificate without a
+		// provisioner extension carries an empty name, so it can only be
+		// allowed by an explicit empty entry in the allowlist.
+		legacyName := provisionerNameFromCertificate(cert)
+		if !a.isLegacyRenewalProvisioner(legacyName) {
 			return nil, errs.Unauthorized("authority.authorizeRenew: provisioner not found", opts...)
 		}
+		p = &provisioner.Noop{}
 	}
 	if err := p.AuthorizeRenew(ctx, cert); err != nil {
 		return nil, errs.Wrap(http.StatusInternalServerError, err, "authority.authorizeRenew", opts...)
 	}
 	return p, nil
+}
+
+// provisionerNameFromCertificate extracts the provisioner name carried in the
+// Step provisioner extension. It returns an empty string when the certificate
+// does not carry the extension or it cannot be parsed.
+func provisionerNameFromCertificate(cert *x509.Certificate) string {
+	ext, ok := provisioner.GetProvisionerExtension(cert)
+	if !ok {
+		return ""
+	}
+	return ext.Name
+}
+
+// isLegacyRenewalProvisioner reports whether name appears on the configured
+// allowlist of historical provisioner identifiers permitted to renew
+// certificates after the provisioner itself has been removed. An empty name
+// matches certificates that do not carry a provisioner extension at all.
+func (a *Authority) isLegacyRenewalProvisioner(name string) bool {
+	if a.config == nil || a.config.AuthorityConfig == nil {
+		return false
+	}
+	for _, legacyName := range a.config.AuthorityConfig.LegacyRenewalProvisioners {
+		if legacyName == name {
+			return true
+		}
+	}
+	return false
 }
 
 // authorizeSSHCertificate returns an error if the given certificate is revoked.

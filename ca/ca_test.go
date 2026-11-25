@@ -584,6 +584,10 @@ func TestCARenew(t *testing.T) {
 	config, err := authority.LoadConfiguration("testdata/ca.json")
 	assert.FatalError(t, err)
 	config.AuthorityConfig.Template = asn1dn
+	// The success case builds a leaf certificate without a provisioner
+	// extension; explicitly allow the empty legacy identifier so the
+	// fail-closed renewal policy still accepts it.
+	config.AuthorityConfig.LegacyRenewalProvisioners = []string{""}
 	ca, err := New(config)
 	assert.FatalError(t, err)
 	assert.FatalError(t, err)

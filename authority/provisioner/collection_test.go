@@ -252,7 +252,7 @@ func TestCollection_LoadByCertificate(t *testing.T) {
 		{"ok1", fields{byName, testAudiences}, args{ok1Cert}, p1, true},
 		{"ok2", fields{byName, testAudiences}, args{ok2Cert}, p2, true},
 		{"ok3", fields{byName, testAudiences}, args{ok3Cert}, p3, true},
-		{"noExtension", fields{byName, testAudiences}, args{&x509.Certificate{}}, &noop{}, true},
+		{"noExtension", fields{byName, testAudiences}, args{&x509.Certificate{}}, nil, false},
 		{"notFound", fields{byName, testAudiences}, args{notFoundCert}, nil, false},
 		{"badCert", fields{byName, testAudiences}, args{badCert}, nil, false},
 	}

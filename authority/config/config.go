@@ -169,6 +169,12 @@ type AuthConfig struct {
 	Backdate             *provisioner.Duration `json:"backdate,omitempty"`
 	EnableAdmin          bool                  `json:"enableAdmin,omitempty"`
 	DisableGetSSHHosts   bool                  `json:"disableGetSSHHosts,omitempty"`
+	// LegacyRenewalProvisioners lists provisioner names that are allowed to
+	// renew certificates even though they are no longer present in the
+	// Provisioners configuration (or the certificates predate the provisioner
+	// extension). It is an explicit, administrator-maintained allowlist:
+	// identifiers outside of this list are rejected at renewal time.
+	LegacyRenewalProvisioners []string `json:"legacyRenewalProvisioners,omitempty"`
 }
 
 // init initializes the required fields in the AuthConfig if they are not

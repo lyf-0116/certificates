@@ -891,6 +891,56 @@ func TestAuthority_authorizeRenew(t *testing.T) {
 				code: http.StatusUnauthorized,
 			}
 		},
+		"fail/no-provisioner-extension": func(t *testing.T) *authorizeTest {
+			a := testAuthority(t)
+			a.db = &db.MockAuthDB{
+				MIsRevoked: func(key string) (bool, error) {
+					return false, nil
+				},
+			}
+			// Certificate without the Step provisioner extension. Without an
+			// identifiable issuer, renewal must fail closed.
+			cert := &x509.Certificate{SerialNumber: fooCrt.SerialNumber}
+			return &authorizeTest{
+				auth: a,
+				cert: cert,
+				err:  errors.New("authority.authorizeRenew: provisioner not found"),
+				code: http.StatusUnauthorized,
+			}
+		},
+		"fail/legacy-allowlist-miss": func(t *testing.T) *authorizeTest {
+			a := testAuthority(t)
+			a.db = &db.MockAuthDB{
+				MIsRevoked: func(key string) (bool, error) {
+					return false, nil
+				},
+			}
+			// The provisioner named in the extension is gone from the
+			// configuration and is not on the legacy allowlist: reject.
+			a.config.AuthorityConfig.LegacyRenewalProvisioners = []string{"some-other-legacy-provisioner"}
+			return &authorizeTest{
+				auth: a,
+				cert: otherCrt,
+				err:  errors.New("authority.authorizeRenew: provisioner not found"),
+				code: http.StatusUnauthorized,
+			}
+		},
+		"ok/legacy-allowlist-hit": func(t *testing.T) *authorizeTest {
+			a := testAuthority(t)
+			a.db = &db.MockAuthDB{
+				MIsRevoked: func(key string) (bool, error) {
+					return false, nil
+				},
+			}
+			// The provisioner named in the extension no longer exists in the
+			// configuration but is explicitly allowlisted as a legacy
+			// identifier, so renewal is authorized via the noop provisioner.
+			a.config.AuthorityConfig.LegacyRenewalProvisioners = []string{"gif@example.com"}
+			return &authorizeTest{
+				auth: a,
+				cert: otherCrt,
+			}
+		},
 		"fail/provisioner-authorize-renewal-fail": func(t *testing.T) *authorizeTest {
 			a := testAuthority(t)
 			a.db = &db.MockAuthDB{

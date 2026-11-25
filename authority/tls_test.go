@@ -1871,6 +1871,10 @@ func TestAuthority_constraints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Certificates signed by this embedded authority carry no provisioner
+	// extension; explicitly allow the empty legacy identifier so that the
+	// fail-closed renewal policy still permits renewing them in this test.
+	auth.config.AuthorityConfig.LegacyRenewalProvisioners = []string{""}
 	signer, err := keyutil.GenerateDefaultSigner()
 	if err != nil {
 		t.Fatal(err)
