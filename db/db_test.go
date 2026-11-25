@@ -165,6 +165,71 @@ func TestUseToken(t *testing.T) {
 	}
 }
 
+func TestReserveToken(t *testing.T) {
+	type result struct {
+		err error
+		ok  bool
+	}
+	tests := map[string]struct {
+		id, tok string
+		db      *DB
+		want    result
+	}{
+		"fail/force-CmpAndSwap-error": {
+			id:  "id",
+			tok: "token",
+			db: &DB{&MockNoSQLDB{
+				MCmpAndSwap: func(bucket, key, old, newval []byte) ([]byte, bool, error) {
+					return nil, false, errors.New("force")
+				},
+			}, true},
+			want: result{
+				ok:  false,
+				err: errors.New("error reserving used token used_ott/id"),
+			},
+		},
+		"fail/CmpAndSwap-already-reserved": {
+			id:  "id",
+			tok: "token",
+			db: &DB{&MockNoSQLDB{
+				MCmpAndSwap: func(bucket, key, old, newval []byte) ([]byte, bool, error) {
+					return []byte("foo"), false, nil
+				},
+			}, true},
+			want: result{
+				ok: false,
+			},
+		},
+		"ok/cmpAndSwap-success": {
+			id:  "id",
+			tok: "token",
+			db: &DB{&MockNoSQLDB{
+				MCmpAndSwap: func(bucket, key, old, newval []byte) ([]byte, bool, error) {
+					return []byte("bar"), true, nil
+				},
+			}, true},
+			want: result{
+				ok: true,
+			},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			switch ok, err := tc.db.ReserveToken(tc.id, tc.tok); {
+			case err != nil:
+				if assert.NotNil(t, tc.want.err) {
+					assert.HasPrefix(t, err.Error(), tc.want.err.Error())
+				}
+				assert.False(t, ok)
+			case ok:
+				assert.True(t, tc.want.ok)
+			default:
+				assert.False(t, tc.want.ok)
+			}
+		})
+	}
+}
+
 // wrappedProvisioner implements raProvisioner and attProvisioner.
 type wrappedProvisioner struct {
 	provisioner.Interface

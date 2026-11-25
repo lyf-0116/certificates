@@ -89,6 +89,21 @@ func (s *SimpleDB) UseToken(id, tok string) (bool, error) {
 	return true, nil
 }
 
+// ReserveToken atomically reserves the token id. It is backed by the same
+// map as UseToken, so a reservation is indistinguishable from a consumed
+// token and only the first caller for a given id succeeds.
+func (s *SimpleDB) ReserveToken(id, tok string) (bool, error) {
+	if _, ok := s.usedTokens.LoadOrStore(id, &usedToken{
+		UsedAt: time.Now().Unix(),
+		Token:  tok,
+	}); ok {
+		// Token already exists in DB.
+		return false, nil
+	}
+	// Successfully reserved token.
+	return true, nil
+}
+
 // IsSSHHost returns a "NotImplemented" error.
 func (s *SimpleDB) IsSSHHost(string) (bool, error) {
 	return false, ErrNotImplemented

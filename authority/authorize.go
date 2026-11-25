@@ -15,6 +15,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/smallstep/certificates/authority/admin"
 	"github.com/smallstep/certificates/authority/provisioner"
+	"github.com/smallstep/certificates/db"
 	"github.com/smallstep/certificates/errs"
 	"github.com/smallstep/linkedca"
 	"go.step.sm/crypto/jose"
@@ -137,58 +138,84 @@ func (a *Authority) AuthorizeAdminToken(r *http.Request, token string) (*linkedc
 		return nil, err
 	}
 
-	// Check that the token has not been used.
+	// validate contains every pure, side-effect-free check of the token. It is
+	// evaluated before the token is consumed so a token that fails validation
+	// (expired, wrong audience, unknown admin, ...) never leaves a record in
+	// the reuse storage.
+	validate := func() (*linkedca.Admin, error) {
+		// According to "rfc7519 JSON Web Token" acceptable skew should be no
+		// more than a few minutes.
+		if err := claims.ValidateWithLeeway(jose.Expected{
+			Time: time.Now().UTC(),
+		}, time.Minute); err != nil {
+			return nil, admin.WrapError(admin.ErrorUnauthorizedType, err, "x5c.authorizeToken; invalid x5c claims")
+		}
+
+		// validate audience: path matches the current path
+		if !matchesAudience(claims.Audience, a.config.Audience(r.URL.Path)) {
+			return nil, admin.NewError(admin.ErrorUnauthorizedType, "x5c.authorizeToken; x5c token has invalid audience claim (aud)")
+		}
+
+		// validate issuer: old versions used the provisioner name, new version uses
+		// 'step-admin-client/1.0'
+		if claims.Issuer != "step-admin-client/1.0" && claims.Issuer != prov.GetName() {
+			return nil, admin.NewError(admin.ErrorUnauthorizedType, "x5c.authorizeToken; x5c token has invalid issuer claim (iss)")
+		}
+
+		if claims.Subject == "" {
+			return nil, admin.NewError(admin.ErrorUnauthorizedType, "x5c.authorizeToken; x5c token subject cannot be empty")
+		}
+
+		var (
+			ok  bool
+			adm *linkedca.Admin
+		)
+		adminFound := false
+		adminSANs := append([]string{leaf.Subject.CommonName}, leaf.DNSNames...)
+		adminSANs = append(adminSANs, leaf.EmailAddresses...)
+		for _, san := range adminSANs {
+			if adm, ok = a.LoadAdminBySubProv(san, prov.GetName()); ok {
+				adminFound = true
+				break
+			}
+		}
+		if !adminFound {
+			return nil, admin.NewError(admin.ErrorUnauthorizedType,
+				"adminHandler.authorizeToken; unable to load admin with subject(s) %s and provisioner '%s'",
+				adminSANs, prov.GetName())
+		}
+
+		if strings.HasPrefix(r.URL.Path, "/admin/admins") && (r.Method != "GET") && adm.Type != linkedca.Admin_SUPER_ADMIN {
+			return nil, admin.NewError(admin.ErrorUnauthorizedType, "must have super admin access to make this request")
+		}
+
+		return adm, nil
+	}
+
+	// Storage backends supporting atomic reservations consume the token only
+	// after every validation has passed. The reservation itself is the
+	// single-shot, atomic operation that rejects concurrent replays.
+	if _, ok := a.db.(db.TokenReserver); ok {
+		adm, err := validate()
+		if err != nil {
+			return nil, err
+		}
+
+		if err := a.reserveToken(r.Context(), token, prov); err != nil {
+			return nil, admin.WrapError(admin.ErrorUnauthorizedType, err, "adminHandler.authorizeToken; error with reuse token")
+		}
+
+		return adm, nil
+	}
+
+	// Fallback for storage backends that do not implement the atomic
+	// reservation semantics: keep the legacy consume-first ordering, which is
+	// the only safe option when check and write cannot be performed atomically.
 	if err := a.UseToken(r.Context(), token, prov); err != nil {
 		return nil, admin.WrapError(admin.ErrorUnauthorizedType, err, "adminHandler.authorizeToken; error with reuse token")
 	}
 
-	// According to "rfc7519 JSON Web Token" acceptable skew should be no
-	// more than a few minutes.
-	if err := claims.ValidateWithLeeway(jose.Expected{
-		Time: time.Now().UTC(),
-	}, time.Minute); err != nil {
-		return nil, admin.WrapError(admin.ErrorUnauthorizedType, err, "x5c.authorizeToken; invalid x5c claims")
-	}
-
-	// validate audience: path matches the current path
-	if !matchesAudience(claims.Audience, a.config.Audience(r.URL.Path)) {
-		return nil, admin.NewError(admin.ErrorUnauthorizedType, "x5c.authorizeToken; x5c token has invalid audience claim (aud)")
-	}
-
-	// validate issuer: old versions used the provisioner name, new version uses
-	// 'step-admin-client/1.0'
-	if claims.Issuer != "step-admin-client/1.0" && claims.Issuer != prov.GetName() {
-		return nil, admin.NewError(admin.ErrorUnauthorizedType, "x5c.authorizeToken; x5c token has invalid issuer claim (iss)")
-	}
-
-	if claims.Subject == "" {
-		return nil, admin.NewError(admin.ErrorUnauthorizedType, "x5c.authorizeToken; x5c token subject cannot be empty")
-	}
-
-	var (
-		ok  bool
-		adm *linkedca.Admin
-	)
-	adminFound := false
-	adminSANs := append([]string{leaf.Subject.CommonName}, leaf.DNSNames...)
-	adminSANs = append(adminSANs, leaf.EmailAddresses...)
-	for _, san := range adminSANs {
-		if adm, ok = a.LoadAdminBySubProv(san, prov.GetName()); ok {
-			adminFound = true
-			break
-		}
-	}
-	if !adminFound {
-		return nil, admin.NewError(admin.ErrorUnauthorizedType,
-			"adminHandler.authorizeToken; unable to load admin with subject(s) %s and provisioner '%s'",
-			adminSANs, prov.GetName())
-	}
-
-	if strings.HasPrefix(r.URL.Path, "/admin/admins") && (r.Method != "GET") && adm.Type != linkedca.Admin_SUPER_ADMIN {
-		return nil, admin.NewError(admin.ErrorUnauthorizedType, "must have super admin access to make this request")
-	}
-
-	return adm, nil
+	return validate()
 }
 
 // UseToken stores the token to protect against reuse.
@@ -199,14 +226,34 @@ func (a *Authority) AuthorizeAdminToken(r *http.Request, token string) (*linkedc
 // provisioner.ErrTokenFlowNotSupported unless this latter one used in a renewal
 // flow without mTLS.
 func (a *Authority) UseToken(ctx context.Context, token string, prov provisioner.Interface) error {
+	reuseKey, skip, err := a.tokenReuseKey(ctx, token, prov)
+	if err != nil || skip {
+		return err
+	}
+	ok, err := a.db.UseToken(reuseKey, token)
+	if err != nil {
+		return errs.Wrap(http.StatusInternalServerError, err, "failed when attempting to store token")
+	}
+	if !ok {
+		return errs.Unauthorized("token already used")
+	}
+
+	return nil
+}
+
+// tokenReuseKey returns the key used to protect against token reuse. The
+// boolean result is true when reuse protection must be skipped, either because
+// the context explicitly requests it or because the provisioner does not
+// support tracking this token flow.
+func (a *Authority) tokenReuseKey(ctx context.Context, token string, prov provisioner.Interface) (string, bool, error) {
 	reuseKey, err := prov.GetTokenID(token)
 	if err != nil {
 		// Fail on ErrTokenFlowNotSupported but allow x5cInsecure renew token
 		if errors.Is(err, provisioner.ErrTokenFlowNotSupported) && provisioner.RenewMethod != provisioner.MethodFromContext(ctx) {
-			return errs.BadRequest("token flow is not supported")
+			return "", false, errs.BadRequest("token flow is not supported")
 		}
 
-		return nil
+		return "", true, nil
 	}
 
 	if reuseKey == "" {
@@ -214,9 +261,31 @@ func (a *Authority) UseToken(ctx context.Context, token string, prov provisioner
 		reuseKey = strings.ToLower(hex.EncodeToString(sum[:]))
 	}
 
-	ok, err := a.db.UseToken(reuseKey, token)
+	return reuseKey, false, nil
+}
+
+// reserveToken atomically marks the token as consumed before a request that
+// passes validation is authorized. It must only be called once every claim of
+// the token has been verified, so a rejected token never leaves a record
+// behind.
+func (a *Authority) reserveToken(ctx context.Context, token string, prov provisioner.Interface) error {
+	if SkipTokenReuseFromContext(ctx) {
+		return nil
+	}
+
+	reuseKey, skip, err := a.tokenReuseKey(ctx, token, prov)
+	if err != nil || skip {
+		return err
+	}
+
+	reserver, ok := a.db.(db.TokenReserver)
+	if !ok {
+		return errs.InternalServer("token reservation is not supported by the storage backend")
+	}
+
+	ok, err = reserver.ReserveToken(reuseKey, token)
 	if err != nil {
-		return errs.Wrap(http.StatusInternalServerError, err, "failed when attempting to store token")
+		return errs.Wrap(http.StatusInternalServerError, err, "failed when attempting to reserve token")
 	}
 	if !ok {
 		return errs.Unauthorized("token already used")

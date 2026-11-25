@@ -65,6 +65,20 @@ type AuthDB interface {
 	Shutdown() error
 }
 
+// TokenReserver is an optional extension of AuthDB implemented by storage
+// backends that can atomically reserve a token id before the token contents
+// are fully validated.
+//
+// ReserveToken performs the same atomic, single-shot operation as UseToken
+// (an insert that only succeeds the first time the id is seen), but it is
+// intended to be called while the token is still being validated. A
+// successful reservation is what marks the token as consumed; a token that
+// fails validation must never be reserved, so rejecting it cannot leave an
+// entry behind in the storage.
+type TokenReserver interface {
+	ReserveToken(id, tok string) (bool, error)
+}
+
 type dbKey struct{}
 
 // NewContext adds the given authority database to the context.
@@ -412,6 +426,20 @@ func (db *DB) UseToken(id, tok string) (bool, error) {
 	return swapped, nil
 }
 
+// ReserveToken atomically reserves the token id before the token is fully
+// validated. It relies on the same compare-and-swap operation as UseToken, so
+// only the first reservation of a given id succeeds. Returning true means the
+// token is consumed; returning false means it was already reserved (and
+// therefore rejected as a reuse) without writing anything new.
+func (db *DB) ReserveToken(id, tok string) (bool, error) {
+	_, swapped, err := db.CmpAndSwap(usedOTTTable, []byte(id), nil, []byte(tok))
+	if err != nil {
+		return false, errors.Wrapf(err, "error reserving used token %s/%s",
+			string(usedOTTTable), id)
+	}
+	return swapped, nil
+}
+
 // IsSSHHost returns if a principal is present in the ssh hosts table.
 func (db *DB) IsSSHHost(principal string) (bool, error) {
 	if _, err := db.Get(sshHostsTable, []byte(strings.ToLower(principal))); err != nil {
@@ -498,6 +526,7 @@ type MockAuthDB struct {
 	MGetCertificateData     func(serialNumber string) (*CertificateData, error)
 	MStoreCertificate       func(crt *x509.Certificate) error
 	MUseToken               func(id, tok string) (bool, error)
+	MReserveToken           func(id, tok string) (bool, error)
 	MIsSSHHost              func(principal string) (bool, error)
 	MStoreSSHCertificate    func(crt *ssh.Certificate) error
 	MGetSSHHostPrincipals   func() ([]string, error)
@@ -548,6 +577,17 @@ func (m *MockAuthDB) IsSSHRevoked(sn string) (bool, error) {
 func (m *MockAuthDB) UseToken(id, tok string) (bool, error) {
 	if m.MUseToken != nil {
 		return m.MUseToken(id, tok)
+	}
+	if m.Ret1 == nil {
+		return false, m.Err
+	}
+	return m.Ret1.(bool), m.Err
+}
+
+// ReserveToken mock.
+func (m *MockAuthDB) ReserveToken(id, tok string) (bool, error) {
+	if m.MReserveToken != nil {
+		return m.MReserveToken(id, tok)
 	}
 	if m.Ret1 == nil {
 		return false, m.Err
